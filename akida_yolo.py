@@ -3,12 +3,10 @@ import cv2
 import time
 import threading
 from imutils.video import VideoStream
-from tensorflow.keras.utils import get_file
 from akida import Model as AkidaModel
-from akida_models import yolo_voc_pretrained, yolo_base
+from akida_models import yolo_widerface_pretrained, yolo_base
 from akida_models.detection.processing import (
     decode_output,
-    parse_voc_annotations,
 )
 from tensorflow.keras import Model
 from tensorflow.keras.preprocessing.image import img_to_array
@@ -27,49 +25,25 @@ PREDICTION_CONFIDENCE_MIN = 0.6
 TARGET_WIDTH = 224
 TARGET_HEIGHT = 224
 
-MODEL_FBZ = "models/yolo.fbz"
-NUM_ACHORS = 5
+MODEL_FBZ = "models/yolo_face.fbz"
+NUM_ANCHORS = 3
 GRID_SIZE = (7, 7)
-NUM_CLASSES = 2
-
-CAR = "car"
-PERSON = "person"
-LABELS = [CAR, PERSON]
-COLOURS = {
-    CAR: (255, 0, 0),
-    PERSON: (0, 255, 0),
-}
-
-DATA_PATH = get_file(
-    "voc_test_car_person.tar.gz",
-    "http://data.brainchip.com/dataset-mirror/voc/voc_test_car_person.tar.gz",
-    cache_subdir="datasets/voc",
-    extract=True,
-)
-DATA_DIR = os.path.dirname(DATA_PATH)
-GT_FOLDER = os.path.join(DATA_DIR, "voc_test_car_person", "Annotations")
-IMG_FOLDER = os.path.join(DATA_DIR, "voc_test_car_person", "JPEGImages")
-FILE_PATH = os.path.join(DATA_DIR, "voc_test_car_person", "test_car_person.txt")
+NUM_CLASSES = 1
 
 
 def initialise():
-    val_data = parse_voc_annotations(GT_FOLDER, IMG_FOLDER, FILE_PATH, LABELS)
-    print(
-        "Loaded VOC2007 test data for car and person classes: "
-        f"{len(val_data)} images."
-    )
 
-    # Create a yolo model for 2 classes with 5 anchors and grid size of 7
+    # Create a yolo model for 2 classes with 10 anchors and grid size of 7
     model = yolo_base(
         input_shape=(TARGET_WIDTH, TARGET_HEIGHT, 3),
         classes=NUM_CLASSES,
-        nb_box=NUM_ACHORS,
+        nb_box=NUM_ANCHORS,
         alpha=0.5,
     )
 
     # Define a reshape output to be added to the YOLO model
     output = Reshape(
-        (GRID_SIZE[1], GRID_SIZE[0], NUM_ACHORS, 4 + 1 + NUM_CLASSES),
+        (GRID_SIZE[1], GRID_SIZE[0], NUM_ANCHORS, 6),
         name="YOLO_output",
     )(model.output)
 
@@ -78,11 +52,13 @@ def initialise():
     full_model.output
 
     # Load the pretrained model along with anchors
-    model_keras, anchors = yolo_voc_pretrained()
+    model_keras, anchors = yolo_widerface_pretrained()
+
+    print(anchors)
 
     # Define the final reshape and build the model
     output = Reshape(
-        (GRID_SIZE[1], GRID_SIZE[0], NUM_ACHORS, 4 + 1 + NUM_CLASSES),
+        (GRID_SIZE[1], GRID_SIZE[0], NUM_ANCHORS, 6),
         name="YOLO_output",
     )(model_keras.output)
     model_keras = Model(model_keras.input, output)
@@ -135,9 +111,9 @@ class Camera:
             if box[5] > PREDICTION_CONFIDENCE_MIN:
                 x1, y1 = int(box[0]), int(box[1])
                 x2, y2 = int(box[2]), int(box[3])
-                label = LABELS[int(box[4])]
+                label = "FACE"
                 score = "{:.2%}".format(box[5])
-                colour = COLOURS[label]
+                colour = (255, 255, 255)
                 frame = cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 1)
                 cv2.putText(
                     frame,
@@ -165,7 +141,7 @@ class Inference:
     def __init__(self, camera):
         # init the camera
         self.camera = camera
-        _, self.anchors = yolo_voc_pretrained()
+        _, self.anchors = yolo_widerface_pretrained()
         # run inference in separate thread
         self.t1 = threading.Thread(target=self.infer)
         self.t1.start()
@@ -180,16 +156,21 @@ class Inference:
             # Call evaluate on the image
             pots = self.model_ak.evaluate(input_array)[0]
 
-            # Reshape the potentials to prepare for decoding
-            w, h, c = pots.shape
-            pots = pots.reshape((w, h, len(self.anchors), 4 + 1 + len(LABELS)))
+            # print(pots.shape)
 
-            # Akida potentials are transposed because they are given in (W,H) format while
-            # the decode_output API uses the Keras-style (H,W).
+            # time.sleep(1000)
+
+            w, h, c = pots.shape
+            pots = pots.reshape((w, h, len(self.anchors), 6))
+
+            # # Akida potentials are transposed because they are given in (W,H) format while
+            # # the decode_output API uses the Keras-style (H,W).
             pots = pots.transpose((1, 0, 2, 3))
 
+            # print(pots)
+
             # Decode potentials into bounding boxes
-            raw_boxes = decode_output(pots, self.anchors, len(LABELS))
+            raw_boxes = decode_output(pots, self.anchors, 1)
 
             # Rescale boxes to the original image size
             pred_boxes = np.array(
