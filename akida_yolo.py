@@ -3,7 +3,7 @@ import cv2
 import time
 import threading
 from imutils.video import VideoStream
-from akida import Model as AkidaModel
+from akida import Model as AkidaModel, devices
 from akida_models import yolo_widerface_pretrained, yolo_base
 from akida_models.detection.processing import (
     decode_output,
@@ -54,8 +54,6 @@ def initialise():
     # Load the pretrained model along with anchors
     model_keras, anchors = yolo_widerface_pretrained()
 
-    print(anchors)
-
     # Define the final reshape and build the model
     output = Reshape(
         (GRID_SIZE[1], GRID_SIZE[0], NUM_ANCHORS, 6),
@@ -65,7 +63,7 @@ def initialise():
 
     # Rebuild a model without the last layer
     compatible_model = Model(model_keras.input, model_keras.layers[-2].output)
-    model_akida = convert(compatible_model, input_scaling=(127.5, 127.5))
+    model_akida = convert(compatible_model)
     model_akida.summary()
 
     # save the model to file
@@ -148,24 +146,24 @@ class Inference:
         # load the akida model
         self.model_ak = AkidaModel(filename=MODEL_FBZ)
 
+        if len(devices()) > 0:
+            device = devices()[0]
+            self.model_ak.map(device)
+
     def infer(self):
         while True:
 
             input_array = self.camera.get_input_array()
 
             # Call evaluate on the image
-            pots = self.model_ak.evaluate(input_array)[0]
+            pots = self.model_ak.predict(input_array)[0]
 
             # print(pots.shape)
 
             # time.sleep(1000)
 
             w, h, c = pots.shape
-            pots = pots.reshape((w, h, len(self.anchors), 6))
-
-            # # Akida potentials are transposed because they are given in (W,H) format while
-            # # the decode_output API uses the Keras-style (H,W).
-            pots = pots.transpose((1, 0, 2, 3))
+            pots = pots.reshape((h, w, len(self.anchors), 6))
 
             # print(pots)
 
