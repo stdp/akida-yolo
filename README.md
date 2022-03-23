@@ -6,7 +6,7 @@ A basic example of using Akida with a camera feed running YOLO to identify peopl
 
 1. Go to `https://www.anaconda.com/download/` and download installer
 2. Install anaconda `bash Anaconda-latest-Linux-x86_64.sh`
-3. Create conda environment `conda create --name akida_env python=3.6`
+3. Create conda environment `conda create --name akida_env python=3.7`
 4. Activate conda environement `conda activate akida_env`
 5. Install python dependencies `pip install -r requirements.txt`
 
