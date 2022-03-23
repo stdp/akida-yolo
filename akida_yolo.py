@@ -4,7 +4,7 @@ import time
 import threading
 from imutils.video import VideoStream
 from tensorflow.keras.utils import get_file
-from akida import Model as AkidaModel
+from akida import Model as AkidaModel, devices
 from akida_models import yolo_voc_pretrained, yolo_base
 from akida_models.detection.processing import (
     decode_output,
@@ -28,7 +28,7 @@ TARGET_WIDTH = 224
 TARGET_HEIGHT = 224
 
 MODEL_FBZ = "models/yolo.fbz"
-NUM_ACHORS = 5
+NUM_ANCHORS = 5
 GRID_SIZE = (7, 7)
 NUM_CLASSES = 2
 
@@ -60,11 +60,10 @@ def initialise():
     )
 
     # Create a yolo model for 2 classes with 5 anchors and grid size of 7
-    model = yolo_base(
-        input_shape=(TARGET_WIDTH, TARGET_HEIGHT, 3),
+    model = yolo_base(input_shape=(TARGET_WIDTH, TARGET_HEIGHT, 3),
         classes=NUM_CLASSES,
-        nb_box=NUM_ACHORS,
-        alpha=0.5,
+        nb_box=NUM_ANCHORS,
+        alpha=0.5
     )
 
     # Define a reshape output to be added to the YOLO model
@@ -172,21 +171,21 @@ class Inference:
         # load the akida model
         self.model_ak = AkidaModel(filename=MODEL_FBZ)
 
+        if len(devices()) > 0:
+            device = devices()[0]
+            self.model_ak.map(device)
+
     def infer(self):
         while True:
 
             input_array = self.camera.get_input_array()
 
             # Call evaluate on the image
-            pots = self.model_ak.evaluate(input_array)[0]
+            pots = self.model_ak.predict(input_array)[0]
 
             # Reshape the potentials to prepare for decoding
             w, h, c = pots.shape
-            pots = pots.reshape((w, h, len(self.anchors), 4 + 1 + len(LABELS)))
-
-            # Akida potentials are transposed because they are given in (W,H) format while
-            # the decode_output API uses the Keras-style (H,W).
-            pots = pots.transpose((1, 0, 2, 3))
+            pots = pots.reshape((h, w, len(self.anchors), 4 + 1 + len(LABELS)))
 
             # Decode potentials into bounding boxes
             raw_boxes = decode_output(pots, self.anchors, len(LABELS))
